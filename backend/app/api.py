@@ -79,14 +79,14 @@ def upload_document(knowledge_base_id: int, file: UploadFile = File(...), db: Se
     path = settings.storage_dir / f"{digest}{extension}"
     path.write_bytes(content)
     try:
-        pages = extract_document(path, extension)
+        pages, ocr_used = extract_document(path, extension)
         if not pages:
             if extension == ".pdf":
                 raise ValueError("PDF 中没有提取到文本；扫描版 PDF 需要 OCR 支持")
             raise ValueError("文档中没有提取到可索引文本")
         document = Document(knowledge_base_id=knowledge_base_id, filename=file.filename,
                             content_sha256=digest, storage_path=str(path), page_count=len(pages),
-                            status="INDEXING", source_type=extension.removeprefix("."))
+                            status="INDEXING", source_type=extension.removeprefix("."), ocr_used=ocr_used)
         db.add(document)
         db.flush()
         for index, (page, text) in enumerate(chunk_pages(pages)):

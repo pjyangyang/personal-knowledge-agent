@@ -29,6 +29,7 @@ class DocumentRead(BaseModel):
     error_message: str | None = None
     source_url: str | None = None
     source_type: str
+    ocr_used: bool
 
 
 class CitationRead(BaseModel):

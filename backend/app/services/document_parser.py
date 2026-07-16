@@ -8,14 +8,14 @@ from .pdf_parser import PageText, extract_pdf
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".md", ".txt"}
 
 
-def extract_document(path: Path, extension: str) -> list[PageText]:
+def extract_document(path: Path, extension: str) -> tuple[list[PageText], bool]:
     extension = extension.lower()
     if extension == ".pdf":
         return extract_pdf(path)
     if extension == ".docx":
-        return extract_docx(path)
+        return extract_docx(path), False
     if extension in {".md", ".txt"}:
-        return extract_text(path)
+        return extract_text(path), False
     raise ValueError(f"不支持的文件格式：{extension}")
 
 

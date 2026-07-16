@@ -26,6 +26,8 @@ def ensure_schema() -> None:
             connection.execute(text("ALTER TABLE documents ADD COLUMN source_url VARCHAR(2000)"))
         if "source_type" not in columns:
             connection.execute(text("ALTER TABLE documents ADD COLUMN source_type VARCHAR(20) NOT NULL DEFAULT 'file'"))
+        if "ocr_used" not in columns:
+            connection.execute(text("ALTER TABLE documents ADD COLUMN ocr_used BOOLEAN NOT NULL DEFAULT 0"))
 
 
 app = FastAPI(title="Personal Knowledge Agent", version="0.1.0", lifespan=lifespan)

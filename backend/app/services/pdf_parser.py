@@ -3,6 +3,8 @@ from pathlib import Path
 
 import fitz
 
+from ..config import settings
+
 
 @dataclass
 class PageText:
@@ -10,14 +12,19 @@ class PageText:
     text: str
 
 
-def extract_pdf(path: Path) -> list[PageText]:
+def extract_pdf(path: Path, ocr_enabled: bool = settings.ocr_enabled) -> tuple[list[PageText], bool]:
     pages: list[PageText] = []
+    ocr_used = False
     with fitz.open(path) as document:
         for index, page in enumerate(document):
             text = page.get_text("text").strip()
+            if not text and ocr_enabled:
+                text_page = page.get_textpage_ocr(language=settings.ocr_languages, dpi=settings.ocr_dpi)
+                text = page.get_text("text", textpage=text_page).strip()
+                ocr_used = ocr_used or bool(text)
             if text:
                 pages.append(PageText(page_number=index + 1, text=text))
-    return pages
+    return pages, ocr_used
 
 
 def chunk_pages(pages: list[PageText], max_chars: int = 1200, overlap: int = 150) -> list[tuple[int, str]]:

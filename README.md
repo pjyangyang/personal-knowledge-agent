@@ -6,6 +6,7 @@
 
 - 已实现：知识库 CRUD、多格式文档上传、网页导入、重复文件检测、PDF 按页解析、文本切分、文档删除、FastEmbed 中文向量检索、Qdrant Local Mode、证据引用、对话历史和文档总结
 - 可选配置：OpenAI 兼容的大语言模型 API；未配置时返回检索证据，不会编造答案
+- 扫描版 PDF：自动使用 Tesseract（中文 `chi_sim` + 英文）OCR，并在文档状态中标识 `OCR`
 - 预留：网页导入、OCR、DOCX/Markdown/TXT、多用户权限、React 前端和复杂 Agent 任务
 
 ## 启动
@@ -67,3 +68,10 @@ python -m pytest -q
 ```
 
 数据默认保存在 `data/`，可通过 `DATABASE_URL` 和 `STORAGE_DIR` 环境变量覆盖。
+
+如需从零创建完整环境，也可以使用仓库中的 `environment.yml`：
+
+```powershell
+conda env create -f environment.yml
+conda activate personal-kb-agent
+```
