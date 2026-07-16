@@ -12,7 +12,8 @@ from .schemas import (CitationRead, DocumentRead, KnowledgeBaseCreate, Knowledge
                       KnowledgeBaseUpdate, ConversationDetail, ConversationRead, MessageRead,
                       QueryRequest, QueryResponse, SummaryRequest, WebpageImportRequest)
 from .services.generation import generate_answer
-from .services.pdf_parser import PageText, chunk_pages, extract_pdf
+from .services.document_parser import SUPPORTED_EXTENSIONS, extract_document
+from .services.pdf_parser import PageText, chunk_pages
 from .services.retrieval import search_chunks
 from .services.vector_store import vector_store
 from .services.web_import import fetch_webpage
@@ -62,10 +63,12 @@ def list_documents(knowledge_base_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/knowledge-bases/{knowledge_base_id}/documents", response_model=DocumentRead, status_code=201)
-def upload_pdf(knowledge_base_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
+def upload_document(knowledge_base_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
     require_kb(db, knowledge_base_id)
-    if not file.filename or not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(415, "当前 MVP 只支持 PDF 文件")
+    extension = Path(file.filename or "").suffix.lower()
+    if not file.filename or extension not in SUPPORTED_EXTENSIONS:
+        supported = "、".join(sorted(SUPPORTED_EXTENSIONS))
+        raise HTTPException(415, f"当前支持的文件格式：{supported}")
     content = file.file.read()
     if len(content) > settings.max_upload_size_mb * 1024 * 1024:
         raise HTTPException(413, "文件超过大小限制")
@@ -73,15 +76,17 @@ def upload_pdf(knowledge_base_id: int, file: UploadFile = File(...), db: Session
     existing = db.scalar(select(Document).where(Document.knowledge_base_id == knowledge_base_id, Document.content_sha256 == digest))
     if existing:
         raise HTTPException(409, f"文件已存在，document_id={existing.id}")
-    path = settings.storage_dir / f"{digest}.pdf"
+    path = settings.storage_dir / f"{digest}{extension}"
     path.write_bytes(content)
     try:
-        pages = extract_pdf(path)
+        pages = extract_document(path, extension)
         if not pages:
-            raise ValueError("PDF 中没有提取到文本；扫描版 PDF 需要后续 OCR 支持")
+            if extension == ".pdf":
+                raise ValueError("PDF 中没有提取到文本；扫描版 PDF 需要 OCR 支持")
+            raise ValueError("文档中没有提取到可索引文本")
         document = Document(knowledge_base_id=knowledge_base_id, filename=file.filename,
                             content_sha256=digest, storage_path=str(path), page_count=len(pages),
-                            status="INDEXING", source_type="file")
+                            status="INDEXING", source_type=extension.removeprefix("."))
         db.add(document)
         db.flush()
         for index, (page, text) in enumerate(chunk_pages(pages)):
@@ -95,7 +100,7 @@ def upload_pdf(knowledge_base_id: int, file: UploadFile = File(...), db: Session
     except Exception as exc:
         db.rollback()
         path.unlink(missing_ok=True)
-        raise HTTPException(422, f"PDF 处理失败：{exc}") from exc
+        raise HTTPException(422, f"文档处理失败：{exc}") from exc
 
 
 @router.post("/knowledge-bases/{knowledge_base_id}/webpages", response_model=DocumentRead, status_code=201)

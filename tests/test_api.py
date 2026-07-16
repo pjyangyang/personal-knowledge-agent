@@ -1,6 +1,7 @@
 from io import BytesIO
 
 import fitz
+from docx import Document as WordDocument
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -17,6 +18,15 @@ def pdf_bytes(text: str) -> bytes:
     data = document.tobytes()
     document.close()
     return data
+
+
+def docx_bytes(text: str) -> bytes:
+    stream = BytesIO()
+    document = WordDocument()
+    document.add_heading("Research Notes", level=1)
+    document.add_paragraph(text)
+    document.save(stream)
+    return stream.getvalue()
 
 
 def test_health_and_pdf_query(tmp_path, monkeypatch):
@@ -56,6 +66,18 @@ def test_health_and_pdf_query(tmp_path, monkeypatch):
                 files={"file": ("paper.pdf", BytesIO(pdf_bytes("Federated learning protects raw data.")), "application/pdf")},
             )
             assert response.status_code == 201
+            text_document = client.post(
+                f"/api/knowledge-bases/{kb_id}/documents",
+                files={"file": ("notes.txt", BytesIO("RAG combines retrieval with generation.".encode()), "text/plain")},
+            )
+            assert text_document.status_code == 201
+            assert text_document.json()["source_type"] == "txt"
+            word_document = client.post(
+                f"/api/knowledge-bases/{kb_id}/documents",
+                files={"file": ("research.docx", BytesIO(docx_bytes("The experiment uses a private dataset.")), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+            )
+            assert word_document.status_code == 201
+            assert word_document.json()["source_type"] == "docx"
             webpage = client.post(
                 f"/api/knowledge-bases/{kb_id}/webpages",
                 json={"url": "https://example.com/rag"},

@@ -10,3 +10,4 @@ httpx
 qdrant-client[fastembed]
 openai
 beautifulsoup4
+python-docx

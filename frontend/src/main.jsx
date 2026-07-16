@@ -53,7 +53,7 @@ function App() {
     const file = event.target.files?.[0]
     event.target.value = ''
     if (!file || !selectedId) return
-    setLoading(true); setNotice('正在解析并建立向量索引，首次运行可能需要下载模型…')
+    setLoading(true); setNotice('正在解析文档并建立向量索引，首次运行可能需要下载模型…')
     try {
       const form = new FormData(); form.append('file', file)
       await api(`/api/knowledge-bases/${selectedId}/documents`, { method: 'POST', body: form })
@@ -120,7 +120,7 @@ function App() {
       <div className="sidebar-foot"><span className="status-dot" />本地工作区<br /><small>资料不会自动上传训练</small></div>
     </aside>
     <main className="content">
-      <header className="topbar"><div><div className="eyebrow">PERSONAL KNOWLEDGE AGENT</div><h1>{selected?.name || '选择一个知识库'}</h1><p>{selected?.description || '上传资料，开始基于证据的检索问答。'}</p></div><div className="top-actions"><button className="secondary" onClick={summarize} disabled={!selectedId || loading}>生成总结</button><button className="secondary" onClick={importWebpage} disabled={!selectedId || loading}>导入网页</button><button className="secondary" onClick={() => loadDocuments(selectedId)}>刷新文档</button><label className="primary"><span>＋ 上传 PDF</span><input ref={fileRef} type="file" accept="application/pdf" onChange={upload} disabled={!selectedId || loading} /></label></div></header>
+      <header className="topbar"><div><div className="eyebrow">PERSONAL KNOWLEDGE AGENT</div><h1>{selected?.name || '选择一个知识库'}</h1><p>{selected?.description || '上传资料，开始基于证据的检索问答。'}</p></div><div className="top-actions"><button className="secondary" onClick={summarize} disabled={!selectedId || loading}>生成总结</button><button className="secondary" onClick={importWebpage} disabled={!selectedId || loading}>导入网页</button><button className="secondary" onClick={() => loadDocuments(selectedId)}>刷新文档</button><label className="primary"><span>＋ 上传资料</span><input ref={fileRef} type="file" accept=".pdf,.docx,.md,.txt" onChange={upload} disabled={!selectedId || loading} /></label></div></header>
       {notice && <div className="notice">{notice}</div>}
       <section className="workspace">
         <div className="chat-card">
@@ -132,7 +132,7 @@ function App() {
           </div>
           <form className="composer" onSubmit={ask}><input value={question} onChange={event => setQuestion(event.target.value)} placeholder={selectedId ? '询问你的文档…' : '请先创建知识库'} disabled={!selectedId || loading} /><button className="send" disabled={!selectedId || loading || !question.trim()}>发送</button></form>
         </div>
-        <aside className="documents-card"><div className="card-head"><div><h2>文档</h2><span>当前知识库中的资料</span></div></div><div className="document-list">{documents.map(document => <div className="document" key={document.id}><div className="file-icon">PDF</div><div className="document-meta"><strong title={document.filename}>{document.filename}</strong><span>{document.page_count} 页 · {document.status === 'INDEXED' ? '已建立索引' : document.status}</span></div><span className="ready-dot" /></div>)}{!documents.length && <div className="empty-docs"><div>▧</div><p>还没有文档</p><small>点击右上角上传 PDF</small></div>}</div></aside>
+        <aside className="documents-card"><div className="card-head"><div><h2>文档</h2><span>当前知识库中的资料</span></div></div><div className="document-list">{documents.map(document => <div className="document" key={document.id}><div className="file-icon">{document.source_type === 'webpage' ? 'WEB' : document.source_type.toUpperCase()}</div><div className="document-meta"><strong title={document.filename}>{document.filename}</strong><span>{document.source_type === 'pdf' ? `${document.page_count} 页` : document.source_type.toUpperCase()} · {document.status === 'INDEXED' ? '已建立索引' : document.status}</span></div><span className="ready-dot" /></div>)}{!documents.length && <div className="empty-docs"><div>▧</div><p>还没有文档</p><small>支持 PDF、DOCX、MD 和 TXT</small></div>}</div></aside>
       </section>
     </main>
   </div>
