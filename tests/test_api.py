@@ -25,6 +25,10 @@ def test_health_and_pdf_query(tmp_path, monkeypatch):
     Base.metadata.create_all(bind=engine)
     monkeypatch.setattr(settings, "storage_dir", tmp_path / "uploads")
     settings.storage_dir.mkdir()
+    monkeypatch.setattr("app.api.vector_store.index_chunks", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.api.vector_store.search", lambda *args, **kwargs: [])
+    monkeypatch.setattr("app.api.vector_store.delete_document", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.api.vector_store.delete_knowledge_base", lambda *args, **kwargs: None)
 
     def override_get_db():
         db = testing_session()
@@ -51,5 +55,15 @@ def test_health_and_pdf_query(tmp_path, monkeypatch):
             assert query.status_code == 200
             assert query.json()["evidence_found"] is True
             assert query.json()["citations"][0]["page_number"] == 1
+            assert query.json()["conversation_id"] > 0
+            conversation_id = query.json()["conversation_id"]
+            history = client.get(f"/api/conversations/{conversation_id}")
+            assert history.status_code == 200
+            assert len(history.json()["messages"]) == 2
+            follow_up = client.post(
+                f"/api/knowledge-bases/{kb_id}/query",
+                json={"question": "raw data", "conversation_id": conversation_id},
+            )
+            assert follow_up.status_code == 200
     finally:
         app.dependency_overrides.clear()

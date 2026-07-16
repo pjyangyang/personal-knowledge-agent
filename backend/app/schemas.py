@@ -41,9 +41,32 @@ class CitationRead(BaseModel):
 class QueryRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     top_k: int = Field(default=5, ge=1, le=20)
+    conversation_id: int | None = None
 
 
 class QueryResponse(BaseModel):
     answer: str
     citations: list[CitationRead]
     evidence_found: bool
+    conversation_id: int
+    message_id: int
+
+
+class ConversationRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    knowledge_base_id: int
+    title: str
+    created_at: datetime
+
+
+class MessageRead(BaseModel):
+    id: int
+    role: str
+    content: str
+    created_at: datetime
+    citations: list[CitationRead] = []
+
+
+class ConversationDetail(ConversationRead):
+    messages: list[MessageRead]

@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 from ..models import DocumentChunk
+from .vector_store import vector_store
 
 
 def search_chunks(db: Session, knowledge_base_id: int, question: str, top_k: int = 5):
@@ -15,6 +16,15 @@ def search_chunks(db: Session, knowledge_base_id: int, question: str, top_k: int
     )
     if not chunks:
         return []
+    by_id = {chunk.id: chunk for chunk in chunks}
+    try:
+        vector_matches = vector_store.search(knowledge_base_id, question, top_k)
+    except Exception:
+        vector_matches = []
+
+    if vector_matches:
+        return [(match.score, by_id[match.chunk_id]) for match in vector_matches if match.chunk_id in by_id]
+
     texts = [chunk.text for chunk in chunks]
     # Character n-grams work for both Chinese text (without whitespace) and Latin text.
     matrix = TfidfVectorizer(analyzer="char", ngram_range=(2, 4)).fit_transform(texts + [question])

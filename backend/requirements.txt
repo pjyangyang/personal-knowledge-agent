@@ -7,3 +7,5 @@ pydantic-settings
 scikit-learn
 pytest
 httpx
+qdrant-client[fastembed]
+openai

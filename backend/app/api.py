@@ -7,11 +7,14 @@ from sqlalchemy.orm import Session
 
 from .config import settings
 from .db import get_db
-from .models import Document, DocumentChunk, KnowledgeBase
+from .models import Citation, Conversation, Document, DocumentChunk, KnowledgeBase, Message
 from .schemas import (CitationRead, DocumentRead, KnowledgeBaseCreate, KnowledgeBaseRead,
-                      KnowledgeBaseUpdate, QueryRequest, QueryResponse)
+                      KnowledgeBaseUpdate, ConversationDetail, ConversationRead, MessageRead,
+                      QueryRequest, QueryResponse)
+from .services.generation import generate_answer
 from .services.pdf_parser import chunk_pages, extract_pdf
 from .services.retrieval import search_chunks
+from .services.vector_store import vector_store
 
 router = APIRouter()
 
@@ -44,6 +47,7 @@ def update_knowledge_base(knowledge_base_id: int, payload: KnowledgeBaseUpdate, 
 def delete_knowledge_base(knowledge_base_id: int, db: Session = Depends(get_db)):
     item = require_kb(db, knowledge_base_id)
     paths = [Path(document.storage_path) for document in item.documents]
+    vector_store.delete_knowledge_base(knowledge_base_id)
     db.delete(item)
     db.commit()
     for path in paths:
@@ -80,6 +84,8 @@ def upload_pdf(knowledge_base_id: int, file: UploadFile = File(...), db: Session
         db.flush()
         for index, (page, text) in enumerate(chunk_pages(pages)):
             db.add(DocumentChunk(document_id=document.id, page_number=page, chunk_index=index, text=text))
+        db.flush()
+        vector_store.index_chunks(knowledge_base_id, document.id, list(document.chunks))
         document.status = "INDEXED"
         db.commit()
         db.refresh(document)
@@ -96,6 +102,7 @@ def delete_document(document_id: int, db: Session = Depends(get_db)):
     if not document:
         raise HTTPException(404, "文档不存在")
     Path(document.storage_path).unlink(missing_ok=True)
+    vector_store.delete_document(document_id)
     db.delete(document)
     db.commit()
 
@@ -103,15 +110,84 @@ def delete_document(document_id: int, db: Session = Depends(get_db)):
 @router.post("/knowledge-bases/{knowledge_base_id}/query", response_model=QueryResponse)
 def query_knowledge_base(knowledge_base_id: int, payload: QueryRequest, db: Session = Depends(get_db)):
     require_kb(db, knowledge_base_id)
+    conversation = get_or_create_conversation(db, knowledge_base_id, payload)
+    user_message = Message(conversation_id=conversation.id, role="user", content=payload.question)
+    db.add(user_message)
+    db.flush()
     matches = search_chunks(db, knowledge_base_id, payload.question, payload.top_k)
     if not matches:
-        return QueryResponse(answer="当前知识库中没有找到足够资料，无法可靠回答该问题。", citations=[], evidence_found=False)
-    citations = [CitationRead(document_id=chunk.document_id, filename=chunk.document.filename,
-                              page_number=chunk.page_number, chunk_id=chunk.id, quote=chunk.text,
-                              score=round(score, 4)) for score, chunk in matches]
-    context = "\n".join(f"[{i + 1}] {c.filename} 第 {c.page_number} 页：{c.quote}" for i, c in enumerate(citations))
-    answer = f"已找到 {len(citations)} 条相关资料。当前版本只完成检索，尚未接入大语言模型。\n\n{context}"
-    return QueryResponse(answer=answer, citations=citations, evidence_found=True)
+        citations = []
+        answer = generate_answer(payload.question, citations)
+        evidence_found = False
+    else:
+        citations = [CitationRead(document_id=chunk.document_id, filename=chunk.document.filename,
+                                  page_number=chunk.page_number, chunk_id=chunk.id, quote=chunk.text,
+                                  score=round(score, 4)) for score, chunk in matches]
+        answer = generate_answer(payload.question, citations)
+        evidence_found = True
+    assistant_message = Message(conversation_id=conversation.id, role="assistant", content=answer)
+    db.add(assistant_message)
+    db.flush()
+    for citation in citations:
+        db.add(Citation(message_id=assistant_message.id, chunk_id=citation.chunk_id,
+                        document_name=citation.filename, page_number=citation.page_number,
+                        quote=citation.quote, score=citation.score))
+    db.commit()
+    return QueryResponse(answer=answer, citations=citations, evidence_found=evidence_found,
+                         conversation_id=conversation.id, message_id=assistant_message.id)
+
+
+@router.get("/knowledge-bases/{knowledge_base_id}/conversations", response_model=list[ConversationRead])
+def list_conversations(knowledge_base_id: int, db: Session = Depends(get_db)):
+    require_kb(db, knowledge_base_id)
+    return list(db.scalars(select(Conversation).where(Conversation.knowledge_base_id == knowledge_base_id).order_by(Conversation.id.desc())))
+
+
+@router.get("/conversations/{conversation_id}", response_model=ConversationDetail)
+def get_conversation(conversation_id: int, db: Session = Depends(get_db)):
+    conversation = db.get(Conversation, conversation_id)
+    if not conversation:
+        raise HTTPException(404, "对话不存在")
+    messages = []
+    for message in conversation.messages:
+        citations = [CitationRead(document_id=c.chunk.document_id if c.chunk else 0,
+                                  filename=c.document_name, page_number=c.page_number,
+                                  chunk_id=c.chunk_id or 0, quote=c.quote, score=c.score)
+                     for c in message.citations]
+        messages.append(MessageRead(id=message.id, role=message.role, content=message.content,
+                                    created_at=message.created_at, citations=citations))
+    return ConversationDetail(id=conversation.id, knowledge_base_id=conversation.knowledge_base_id,
+                              title=conversation.title, created_at=conversation.created_at, messages=messages)
+
+
+@router.delete("/conversations/{conversation_id}", status_code=204)
+def delete_conversation(conversation_id: int, db: Session = Depends(get_db)):
+    conversation = db.get(Conversation, conversation_id)
+    if not conversation:
+        raise HTTPException(404, "对话不存在")
+    db.delete(conversation)
+    db.commit()
+
+
+@router.post("/knowledge-bases/{knowledge_base_id}/reindex", response_model=list[DocumentRead])
+def reindex_knowledge_base(knowledge_base_id: int, db: Session = Depends(get_db)):
+    require_kb(db, knowledge_base_id)
+    documents = list(db.scalars(select(Document).where(Document.knowledge_base_id == knowledge_base_id)))
+    for document in documents:
+        vector_store.index_chunks(knowledge_base_id, document.id, list(document.chunks))
+    return documents
+
+
+def get_or_create_conversation(db: Session, knowledge_base_id: int, payload: QueryRequest) -> Conversation:
+    if payload.conversation_id is not None:
+        conversation = db.get(Conversation, payload.conversation_id)
+        if not conversation or conversation.knowledge_base_id != knowledge_base_id:
+            raise HTTPException(404, "对话不存在或不属于当前知识库")
+        return conversation
+    conversation = Conversation(knowledge_base_id=knowledge_base_id, title=payload.question[:80])
+    db.add(conversation)
+    db.flush()
+    return conversation
 
 
 def require_kb(db: Session, knowledge_base_id: int) -> KnowledgeBase:
