@@ -19,6 +19,25 @@ python -m uvicorn app.main:app --app-dir backend --reload
 
 打开 http://127.0.0.1:8000/docs 查看 API 文档。
 
+前端开发模式（需要 Node.js）：
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+然后打开 http://127.0.0.1:5173。前端会自动将 `/api` 请求代理到 FastAPI。
+
+构建前端后，也可以通过后端访问：
+
+```powershell
+cd frontend
+npm run build
+```
+
+然后访问 http://127.0.0.1:8000/app。
+
 首次上传或重建索引时会下载并缓存 `BAAI/bge-small-zh-v1.5` Embedding 模型，默认缓存目录是 `data/models`。
 
 如需接入大语言模型，在项目根目录创建 `.env`：
