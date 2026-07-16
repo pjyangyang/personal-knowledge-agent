@@ -9,3 +9,4 @@ pytest
 httpx
 qdrant-client[fastembed]
 openai
+beautifulsoup4

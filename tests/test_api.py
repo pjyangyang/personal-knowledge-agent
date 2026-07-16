@@ -29,6 +29,11 @@ def test_health_and_pdf_query(tmp_path, monkeypatch):
     monkeypatch.setattr("app.api.vector_store.search", lambda *args, **kwargs: [])
     monkeypatch.setattr("app.api.vector_store.delete_document", lambda *args, **kwargs: None)
     monkeypatch.setattr("app.api.vector_store.delete_knowledge_base", lambda *args, **kwargs: None)
+    def fake_fetch_webpage(url, path):
+        text = "This webpage explains retrieval augmented generation and source citations."
+        path.write_text(text, encoding="utf-8")
+        return "RAG Guide", text
+    monkeypatch.setattr("app.api.fetch_webpage", fake_fetch_webpage)
 
     def override_get_db():
         db = testing_session()
@@ -51,6 +56,13 @@ def test_health_and_pdf_query(tmp_path, monkeypatch):
                 files={"file": ("paper.pdf", BytesIO(pdf_bytes("Federated learning protects raw data.")), "application/pdf")},
             )
             assert response.status_code == 201
+            webpage = client.post(
+                f"/api/knowledge-bases/{kb_id}/webpages",
+                json={"url": "https://example.com/rag"},
+            )
+            assert webpage.status_code == 201
+            assert webpage.json()["source_type"] == "webpage"
+            assert webpage.json()["source_url"] == "https://example.com/rag"
             query = client.post(f"/api/knowledge-bases/{kb_id}/query", json={"question": "raw data"})
             assert query.status_code == 200
             assert query.json()["evidence_found"] is True
@@ -65,5 +77,8 @@ def test_health_and_pdf_query(tmp_path, monkeypatch):
                 json={"question": "raw data", "conversation_id": conversation_id},
             )
             assert follow_up.status_code == 200
+            summary = client.post(f"/api/knowledge-bases/{kb_id}/summarize", json={})
+            assert summary.status_code == 200
+            assert summary.json()["evidence_found"] is True
     finally:
         app.dependency_overrides.clear()

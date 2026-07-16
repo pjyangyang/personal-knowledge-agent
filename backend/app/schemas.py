@@ -27,6 +27,8 @@ class DocumentRead(BaseModel):
     page_count: int
     created_at: datetime
     error_message: str | None = None
+    source_url: str | None = None
+    source_type: str
 
 
 class CitationRead(BaseModel):
@@ -36,6 +38,7 @@ class CitationRead(BaseModel):
     chunk_id: int
     quote: str
     score: float
+    source_url: str | None = None
 
 
 class QueryRequest(BaseModel):
@@ -50,6 +53,15 @@ class QueryResponse(BaseModel):
     evidence_found: bool
     conversation_id: int
     message_id: int
+
+
+class WebpageImportRequest(BaseModel):
+    url: str = Field(min_length=8, max_length=2000)
+
+
+class SummaryRequest(BaseModel):
+    document_id: int | None = None
+    instruction: str = Field(default="请总结资料的核心观点、方法、结论和局限性。", max_length=1000)
 
 
 class ConversationRead(BaseModel):

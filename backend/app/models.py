@@ -28,6 +28,8 @@ class Document(Base):
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     storage_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    source_url: Mapped[str | None] = mapped_column(String(2000))
+    source_type: Mapped[str] = mapped_column(String(20), default="file", nullable=False)
     status: Mapped[str] = mapped_column(String(30), default="INDEXED", nullable=False)
     page_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     error_message: Mapped[str | None] = mapped_column(Text)

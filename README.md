@@ -52,7 +52,9 @@ LLM_MODEL=your-model-name
 
 - `POST /api/knowledge-bases`：创建知识库
 - `POST /api/knowledge-bases/{id}/documents`：上传 PDF
+- `POST /api/knowledge-bases/{id}/webpages`：导入网页正文
 - `POST /api/knowledge-bases/{id}/query`：检索并回答问题
+- `POST /api/knowledge-bases/{id}/summarize`：生成带引用的总结
 - `GET /api/knowledge-bases/{id}/conversations`：查看对话列表
 - `GET /api/conversations/{id}`：查看带引用的对话详情
 - `POST /api/knowledge-bases/{id}/reindex`：重建知识库向量索引

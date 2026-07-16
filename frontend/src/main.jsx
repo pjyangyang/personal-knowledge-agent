@@ -62,6 +62,33 @@ function App() {
     } catch (error) { setNotice(error.message) } finally { setLoading(false) }
   }
 
+  const importWebpage = async () => {
+    if (!selectedId) return
+    const url = window.prompt('输入网页地址')
+    if (!url?.trim()) return
+    setLoading(true); setNotice('正在抓取网页正文并建立索引…')
+    try {
+      await api(`/api/knowledge-bases/${selectedId}/webpages`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ url: url.trim() })
+      })
+      await loadDocuments(selectedId); setNotice('网页已加入知识库')
+    } catch (error) { setNotice(error.message) } finally { setLoading(false) }
+  }
+
+  const summarize = async () => {
+    if (!selectedId || loading) return
+    setLoading(true); setNotice('正在生成带引用的知识库总结…')
+    try {
+      const result = await api(`/api/knowledge-bases/${selectedId}/summarize`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})
+      })
+      setConversationId(result.conversation_id)
+      setMessages(current => [...current, { role: 'assistant', content: result.answer, citations: result.citations }])
+      setNotice('总结已生成')
+    } catch (error) { setNotice(error.message) } finally { setLoading(false) }
+  }
+
   const ask = async (event) => {
     event.preventDefault()
     const text = question.trim()
@@ -93,7 +120,7 @@ function App() {
       <div className="sidebar-foot"><span className="status-dot" />本地工作区<br /><small>资料不会自动上传训练</small></div>
     </aside>
     <main className="content">
-      <header className="topbar"><div><div className="eyebrow">PERSONAL KNOWLEDGE AGENT</div><h1>{selected?.name || '选择一个知识库'}</h1><p>{selected?.description || '上传资料，开始基于证据的检索问答。'}</p></div><div className="top-actions"><button className="secondary" onClick={() => loadDocuments(selectedId)}>刷新文档</button><label className="primary"><span>＋ 上传 PDF</span><input ref={fileRef} type="file" accept="application/pdf" onChange={upload} disabled={!selectedId || loading} /></label></div></header>
+      <header className="topbar"><div><div className="eyebrow">PERSONAL KNOWLEDGE AGENT</div><h1>{selected?.name || '选择一个知识库'}</h1><p>{selected?.description || '上传资料，开始基于证据的检索问答。'}</p></div><div className="top-actions"><button className="secondary" onClick={summarize} disabled={!selectedId || loading}>生成总结</button><button className="secondary" onClick={importWebpage} disabled={!selectedId || loading}>导入网页</button><button className="secondary" onClick={() => loadDocuments(selectedId)}>刷新文档</button><label className="primary"><span>＋ 上传 PDF</span><input ref={fileRef} type="file" accept="application/pdf" onChange={upload} disabled={!selectedId || loading} /></label></div></header>
       {notice && <div className="notice">{notice}</div>}
       <section className="workspace">
         <div className="chat-card">
