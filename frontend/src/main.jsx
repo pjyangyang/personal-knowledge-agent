@@ -11,6 +11,8 @@ const api = async (path, options = {}) => {
 
 function App() {
   const [knowledgeBases, setKnowledgeBases] = useState([])
+  const [skills, setSkills] = useState([])
+  const [selectedSkill, setSelectedSkill] = useState('general_qa')
   const [selectedId, setSelectedId] = useState(null)
   const [documents, setDocuments] = useState([])
   const [messages, setMessages] = useState([])
@@ -31,7 +33,10 @@ function App() {
     setDocuments(await api(`/api/knowledge-bases/${id}/documents`))
   }
 
-  useEffect(() => { loadKnowledgeBases().catch(error => setNotice(error.message)) }, [])
+  useEffect(() => {
+    loadKnowledgeBases().catch(error => setNotice(error.message))
+    api('/api/skills').then(setSkills).catch(error => setNotice(error.message))
+  }, [])
   useEffect(() => { loadDocuments(selectedId).catch(error => setNotice(error.message)) }, [selectedId])
 
   const createKnowledgeBase = async () => {
@@ -123,7 +128,7 @@ function App() {
     try {
       const response = await fetch(`/api/knowledge-bases/${selectedId}/query/stream`, {
         method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ question: text, top_k: 5, conversation_id: conversationId })
+        body: JSON.stringify({ question: text, top_k: 5, conversation_id: conversationId, skill_id: selectedSkill })
       })
       if (!response.ok) {
         const error = await response.json().catch(() => ({}))
@@ -174,7 +179,7 @@ function App() {
       {notice && <div className="notice">{notice}</div>}
       <section className="workspace">
         <div className="chat-card">
-          <div className="card-head"><div><h2>知识库问答</h2><span>回答将优先依据已上传文档，并保留页码引用</span></div><span className="pill">{documents.length} 个文档</span></div>
+          <div className="card-head"><div><h2>知识库问答</h2><span>回答将优先依据已上传文档，并保留页码引用</span></div><div className="skill-control"><label>任务 Skill</label><select value={selectedSkill} onChange={event => setSelectedSkill(event.target.value)} disabled={loading}>{skills.map(skill => <option value={skill.id} key={skill.id}>{skill.name}</option>)}</select><span className="pill">{documents.length} 个文档</span></div></div>
           <div className="messages">
             {!messages.length && <div className="welcome"><div className="welcome-icon">✦</div><h3>从资料中找到答案</h3><p>你可以询问方法、结论、定义、合同条款，或比较多个文档的观点。</p><div className="suggestions"><button onClick={() => setQuestion('请总结这些文档的核心观点')}>总结核心观点</button><button onClick={() => setQuestion('这些资料中使用了哪些方法？')}>提取研究方法</button><button onClick={() => setQuestion('请列出相关结论及其页码')}>查找关键结论</button></div></div>}
             {messages.map((message, index) => <div key={index} className={`message ${message.role}`}><div className="avatar">{message.role === 'user' ? '我' : '✦'}</div><div className="bubble"><div className="message-content">{message.content}</div>{message.citations?.length > 0 && <div className="citations"><div className="citation-title">证据来源</div>{message.citations.map((citation, i) => <div className="citation" key={citation.chunk_id || i}><span className="citation-index">[{i + 1}]</span><div><strong>{citation.filename}</strong><span>第 {citation.page_number} 页 · 相似度 {citation.score}</span><p>{citation.quote}</p></div></div>)}</div>}</div></div>)}

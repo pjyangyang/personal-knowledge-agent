@@ -60,6 +60,9 @@ def test_health_and_pdf_query(tmp_path, monkeypatch):
             kb = client.post("/api/knowledge-bases", json={"name": "论文资料库"})
             assert kb.status_code == 201
             kb_id = kb.json()["id"]
+            skills = client.get("/api/skills")
+            assert skills.status_code == 200
+            assert any(skill["id"] == "paper_analysis" for skill in skills.json())
             renamed = client.patch(f"/api/knowledge-bases/{kb_id}", json={"name": "联邦学习资料库"})
             assert renamed.json()["name"] == "联邦学习资料库"
             response = client.post(
@@ -86,11 +89,12 @@ def test_health_and_pdf_query(tmp_path, monkeypatch):
             assert webpage.status_code == 201
             assert webpage.json()["source_type"] == "webpage"
             assert webpage.json()["source_url"] == "https://example.com/rag"
-            query = client.post(f"/api/knowledge-bases/{kb_id}/query", json={"question": "raw data"})
+            query = client.post(f"/api/knowledge-bases/{kb_id}/query", json={"question": "raw data", "skill_id": "paper_analysis"})
             assert query.status_code == 200
             assert query.json()["evidence_found"] is True
             assert query.json()["citations"][0]["page_number"] == 1
             assert query.json()["conversation_id"] > 0
+            assert query.json()["skill_id"] == "paper_analysis"
             conversation_id = query.json()["conversation_id"]
             history = client.get(f"/api/conversations/{conversation_id}")
             assert history.status_code == 200

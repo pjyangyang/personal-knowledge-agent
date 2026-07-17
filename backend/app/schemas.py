@@ -44,8 +44,9 @@ class CitationRead(BaseModel):
 
 class QueryRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
-    top_k: int = Field(default=5, ge=1, le=20)
+    top_k: int | None = Field(default=None, ge=1, le=20)
     conversation_id: int | None = None
+    skill_id: str = "general_qa"
 
 
 class QueryResponse(BaseModel):
@@ -54,6 +55,15 @@ class QueryResponse(BaseModel):
     evidence_found: bool
     conversation_id: int
     message_id: int
+    skill_id: str = "general_qa"
+
+
+class SkillRead(BaseModel):
+    id: str
+    name: str
+    description: str
+    category: str
+    top_k: int
 
 
 class WebpageImportRequest(BaseModel):
