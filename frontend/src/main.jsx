@@ -89,6 +89,29 @@ function App() {
     } catch (error) { setNotice(error.message) } finally { setLoading(false) }
   }
 
+  const deleteDocument = async (document) => {
+    if (!window.confirm(`确定删除“${document.filename}”吗？删除后它不会再参与检索。`)) return
+    setLoading(true)
+    try {
+      await api(`/api/documents/${document.id}`, { method: 'DELETE' })
+      await loadDocuments(selectedId)
+      setNotice(`已删除：${document.filename}`)
+    } catch (error) { setNotice(error.message) } finally { setLoading(false) }
+  }
+
+  const deleteKnowledgeBase = async () => {
+    if (!selected || !window.confirm(`确定删除知识库“${selected.name}”及其中的全部资料吗？此操作不可撤销。`)) return
+    setLoading(true)
+    try {
+      await api(`/api/knowledge-bases/${selected.id}`, { method: 'DELETE' })
+      const remaining = knowledgeBases.filter(item => item.id !== selected.id)
+      setKnowledgeBases(remaining)
+      setSelectedId(remaining[0]?.id || null)
+      setDocuments([]); setMessages([]); setConversationId(null)
+      setNotice(`已删除知识库：${selected.name}`)
+    } catch (error) { setNotice(error.message) } finally { setLoading(false) }
+  }
+
   const ask = async (event) => {
     event.preventDefault()
     const text = question.trim()
@@ -147,7 +170,7 @@ function App() {
       <div className="sidebar-foot"><span className="status-dot" />本地工作区<br /><small>资料不会自动上传训练</small></div>
     </aside>
     <main className="content">
-      <header className="topbar"><div><div className="eyebrow">PERSONAL KNOWLEDGE AGENT</div><h1>{selected?.name || '选择一个知识库'}</h1><p>{selected?.description || '上传资料，开始基于证据的检索问答。'}</p></div><div className="top-actions"><button className="secondary" onClick={summarize} disabled={!selectedId || loading}>生成总结</button><button className="secondary" onClick={importWebpage} disabled={!selectedId || loading}>导入网页</button><button className="secondary" onClick={() => loadDocuments(selectedId)}>刷新文档</button><label className="primary"><span>＋ 上传资料</span><input ref={fileRef} type="file" accept=".pdf,.docx,.md,.txt" onChange={upload} disabled={!selectedId || loading} /></label></div></header>
+      <header className="topbar"><div><div className="eyebrow">PERSONAL KNOWLEDGE AGENT</div><h1>{selected?.name || '选择一个知识库'}</h1><p>{selected?.description || '上传资料，开始基于证据的检索问答。'}</p></div><div className="top-actions"><button className="secondary" onClick={summarize} disabled={!selectedId || loading}>生成总结</button><button className="secondary" onClick={importWebpage} disabled={!selectedId || loading}>导入网页</button><button className="secondary" onClick={() => loadDocuments(selectedId)}>刷新文档</button><button className="danger-button" onClick={deleteKnowledgeBase} disabled={!selectedId || loading}>删除知识库</button><label className="primary"><span>＋ 上传资料</span><input ref={fileRef} type="file" accept=".pdf,.docx,.md,.txt" onChange={upload} disabled={!selectedId || loading} /></label></div></header>
       {notice && <div className="notice">{notice}</div>}
       <section className="workspace">
         <div className="chat-card">
@@ -159,7 +182,7 @@ function App() {
           </div>
           <form className="composer" onSubmit={ask}><input value={question} onChange={event => setQuestion(event.target.value)} placeholder={selectedId ? '询问你的文档…' : '请先创建知识库'} disabled={!selectedId || loading} /><button className="send" disabled={!selectedId || loading || !question.trim()}>发送</button></form>
         </div>
-        <aside className="documents-card"><div className="card-head"><div><h2>文档</h2><span>当前知识库中的资料</span></div></div><div className="document-list">{documents.map(document => <div className="document" key={document.id}><div className="file-icon">{document.source_type === 'webpage' ? 'WEB' : document.source_type.toUpperCase()}</div><div className="document-meta"><strong title={document.filename}>{document.filename}</strong><span>{document.source_type === 'pdf' ? `${document.page_count} 页` : document.source_type.toUpperCase()} · {document.status === 'INDEXED' ? '已建立索引' : document.status}{document.ocr_used ? ' · OCR' : ''}</span></div><span className="ready-dot" /></div>)}{!documents.length && <div className="empty-docs"><div>▧</div><p>还没有文档</p><small>支持 PDF、DOCX、MD 和 TXT</small></div>}</div></aside>
+        <aside className="documents-card"><div className="card-head"><div><h2>文档</h2><span>当前知识库中的资料</span></div></div><div className="document-list">{documents.map(document => <div className="document" key={document.id}><div className="file-icon">{document.source_type === 'webpage' ? 'WEB' : document.source_type.toUpperCase()}</div><div className="document-meta"><strong title={document.filename}>{document.filename}</strong><span>{document.source_type === 'pdf' ? `${document.page_count} 页` : document.source_type.toUpperCase()} · {document.status === 'INDEXED' ? '已建立索引' : document.status}{document.ocr_used ? ' · OCR' : ''}</span></div><button className="doc-delete" onClick={() => deleteDocument(document)} disabled={loading}>删除</button><span className="ready-dot" /></div>)}{!documents.length && <div className="empty-docs"><div>▧</div><p>还没有文档</p><small>支持 PDF、DOCX、MD 和 TXT</small></div>}</div></aside>
       </section>
     </main>
   </div>
