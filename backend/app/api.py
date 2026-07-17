@@ -1,9 +1,11 @@
 import hashlib
+import json
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from .config import settings
 from .db import get_db
@@ -11,7 +13,7 @@ from .models import Citation, Conversation, Document, DocumentChunk, KnowledgeBa
 from .schemas import (CitationRead, DocumentRead, KnowledgeBaseCreate, KnowledgeBaseRead,
                       KnowledgeBaseUpdate, ConversationDetail, ConversationRead, MessageRead,
                       QueryRequest, QueryResponse, SummaryRequest, WebpageImportRequest)
-from .services.generation import generate_answer
+from .services.generation import generate_answer, stream_answer
 from .services.document_parser import SUPPORTED_EXTENSIONS, extract_document
 from .services.pdf_parser import PageText, chunk_pages
 from .services.retrieval import search_chunks
@@ -174,6 +176,48 @@ def query_knowledge_base(knowledge_base_id: int, payload: QueryRequest, db: Sess
     db.commit()
     return QueryResponse(answer=answer, citations=citations, evidence_found=evidence_found,
                          conversation_id=conversation.id, message_id=assistant_message.id)
+
+
+@router.post("/knowledge-bases/{knowledge_base_id}/query/stream")
+def stream_query_knowledge_base(knowledge_base_id: int, payload: QueryRequest, db: Session = Depends(get_db)):
+    require_kb(db, knowledge_base_id)
+    conversation = get_or_create_conversation(db, knowledge_base_id, payload)
+    db.add(Message(conversation_id=conversation.id, role="user", content=payload.question))
+    matches = search_chunks(db, knowledge_base_id, payload.question, payload.top_k)
+    citations = [CitationRead(document_id=chunk.document_id, filename=chunk.document.filename,
+                              page_number=chunk.page_number, chunk_id=chunk.id, quote=chunk.text,
+                              score=round(score, 4), source_url=chunk.document.source_url)
+                 for score, chunk in matches]
+    db.commit()
+    conversation_id = conversation.id
+    stream_session_factory = sessionmaker(bind=db.get_bind(), autoflush=False, autocommit=False)
+
+    def generate_events():
+        yield json.dumps({"type": "meta", "conversation_id": conversation_id,
+                          "citations": [item.model_dump(mode="json") for item in citations]},
+                         ensure_ascii=False) + "\n"
+        answer_parts: list[str] = []
+        try:
+            for token in stream_answer(payload.question, citations):
+                answer_parts.append(token)
+                yield json.dumps({"type": "token", "content": token}, ensure_ascii=False) + "\n"
+            answer = "".join(answer_parts)
+            with stream_session_factory() as stream_db:
+                assistant = Message(conversation_id=conversation_id, role="assistant", content=answer)
+                stream_db.add(assistant)
+                stream_db.flush()
+                for citation in citations:
+                    stream_db.add(Citation(message_id=assistant.id, chunk_id=citation.chunk_id,
+                                           document_name=citation.filename, page_number=citation.page_number,
+                                           quote=citation.quote, score=citation.score))
+                stream_db.commit()
+                message_id = assistant.id
+            yield json.dumps({"type": "done", "message_id": message_id}, ensure_ascii=False) + "\n"
+        except Exception as exc:
+            yield json.dumps({"type": "error", "message": str(exc)}, ensure_ascii=False) + "\n"
+
+    return StreamingResponse(generate_events(), media_type="application/x-ndjson",
+                             headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"})
 
 
 @router.get("/knowledge-bases/{knowledge_base_id}/conversations", response_model=list[ConversationRead])
