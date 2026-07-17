@@ -12,15 +12,27 @@ from .db import get_db
 from .models import Citation, Conversation, Document, DocumentChunk, KnowledgeBase, Message
 from .schemas import (CitationRead, DocumentRead, KnowledgeBaseCreate, KnowledgeBaseRead,
                       KnowledgeBaseUpdate, ConversationDetail, ConversationRead, MessageRead,
-                      QueryRequest, QueryResponse, SummaryRequest, WebpageImportRequest)
+                      QueryRequest, QueryResponse, SkillRead, SummaryRequest, WebpageImportRequest)
 from .services.generation import generate_answer, stream_answer
 from .services.document_parser import SUPPORTED_EXTENSIONS, extract_document
 from .services.pdf_parser import PageText, chunk_pages
 from .services.retrieval import search_chunks
 from .services.vector_store import vector_store
 from .services.web_import import fetch_webpage
+from .skills.registry import SKILLS, get_skill
 
 router = APIRouter()
+
+
+@router.get("/skills", response_model=list[SkillRead])
+def list_skills():
+    return [SkillRead(**skill.public_dict()) for skill in SKILLS.values()]
+
+
+@router.get("/skills/{skill_id}", response_model=SkillRead)
+def read_skill(skill_id: str):
+    skill = require_skill(skill_id)
+    return SkillRead(**skill.public_dict())
 
 
 @router.post("/knowledge-bases", response_model=KnowledgeBaseRead, status_code=status.HTTP_201_CREATED)
@@ -151,20 +163,21 @@ def delete_document(document_id: int, db: Session = Depends(get_db)):
 @router.post("/knowledge-bases/{knowledge_base_id}/query", response_model=QueryResponse)
 def query_knowledge_base(knowledge_base_id: int, payload: QueryRequest, db: Session = Depends(get_db)):
     require_kb(db, knowledge_base_id)
+    skill = require_skill(payload.skill_id)
     conversation = get_or_create_conversation(db, knowledge_base_id, payload)
     user_message = Message(conversation_id=conversation.id, role="user", content=payload.question)
     db.add(user_message)
     db.flush()
-    matches = search_chunks(db, knowledge_base_id, payload.question, payload.top_k)
+    matches = search_chunks(db, knowledge_base_id, payload.question, payload.top_k or skill.top_k)
     if not matches:
         citations = []
-        answer = generate_answer(payload.question, citations)
+        answer = generate_answer(payload.question, citations, skill)
         evidence_found = False
     else:
         citations = [CitationRead(document_id=chunk.document_id, filename=chunk.document.filename,
                                   page_number=chunk.page_number, chunk_id=chunk.id, quote=chunk.text,
                                   score=round(score, 4), source_url=chunk.document.source_url) for score, chunk in matches]
-        answer = generate_answer(payload.question, citations)
+        answer = generate_answer(payload.question, citations, skill)
         evidence_found = True
     assistant_message = Message(conversation_id=conversation.id, role="assistant", content=answer)
     db.add(assistant_message)
@@ -175,15 +188,16 @@ def query_knowledge_base(knowledge_base_id: int, payload: QueryRequest, db: Sess
                         quote=citation.quote, score=citation.score))
     db.commit()
     return QueryResponse(answer=answer, citations=citations, evidence_found=evidence_found,
-                         conversation_id=conversation.id, message_id=assistant_message.id)
+                         conversation_id=conversation.id, message_id=assistant_message.id, skill_id=skill.id)
 
 
 @router.post("/knowledge-bases/{knowledge_base_id}/query/stream")
 def stream_query_knowledge_base(knowledge_base_id: int, payload: QueryRequest, db: Session = Depends(get_db)):
     require_kb(db, knowledge_base_id)
+    skill = require_skill(payload.skill_id)
     conversation = get_or_create_conversation(db, knowledge_base_id, payload)
     db.add(Message(conversation_id=conversation.id, role="user", content=payload.question))
-    matches = search_chunks(db, knowledge_base_id, payload.question, payload.top_k)
+    matches = search_chunks(db, knowledge_base_id, payload.question, payload.top_k or skill.top_k)
     citations = [CitationRead(document_id=chunk.document_id, filename=chunk.document.filename,
                               page_number=chunk.page_number, chunk_id=chunk.id, quote=chunk.text,
                               score=round(score, 4), source_url=chunk.document.source_url)
@@ -194,11 +208,12 @@ def stream_query_knowledge_base(knowledge_base_id: int, payload: QueryRequest, d
 
     def generate_events():
         yield json.dumps({"type": "meta", "conversation_id": conversation_id,
+                          "skill_id": skill.id,
                           "citations": [item.model_dump(mode="json") for item in citations]},
                          ensure_ascii=False) + "\n"
         answer_parts: list[str] = []
         try:
-            for token in stream_answer(payload.question, citations):
+            for token in stream_answer(payload.question, citations, skill):
                 answer_parts.append(token)
                 yield json.dumps({"type": "token", "content": token}, ensure_ascii=False) + "\n"
             answer = "".join(answer_parts)
@@ -283,7 +298,8 @@ def summarize_knowledge_base(knowledge_base_id: int, payload: SummaryRequest, db
     conversation = Conversation(knowledge_base_id=knowledge_base_id, title=f"总结：{title[:60]}")
     db.add(conversation)
     db.flush()
-    answer = generate_answer(payload.instruction, citations)
+    skill = get_skill("general_qa")
+    answer = generate_answer(payload.instruction, citations, skill)
     user_message = Message(conversation_id=conversation.id, role="user", content=payload.instruction)
     assistant_message = Message(conversation_id=conversation.id, role="assistant", content=answer)
     db.add_all([user_message, assistant_message])
@@ -294,7 +310,7 @@ def summarize_knowledge_base(knowledge_base_id: int, payload: SummaryRequest, db
                         quote=citation.quote, score=citation.score))
     db.commit()
     return QueryResponse(answer=answer, citations=citations, evidence_found=bool(citations),
-                         conversation_id=conversation.id, message_id=assistant_message.id)
+                         conversation_id=conversation.id, message_id=assistant_message.id, skill_id=skill.id)
 
 
 def get_or_create_conversation(db: Session, knowledge_base_id: int, payload: QueryRequest) -> Conversation:
@@ -307,6 +323,13 @@ def get_or_create_conversation(db: Session, knowledge_base_id: int, payload: Que
     db.add(conversation)
     db.flush()
     return conversation
+
+
+def require_skill(skill_id: str):
+    try:
+        return get_skill(skill_id)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 def require_kb(db: Session, knowledge_base_id: int) -> KnowledgeBase:

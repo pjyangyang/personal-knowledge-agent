@@ -17,6 +17,7 @@
 - 返回文件名、PDF 页码、网页 URL 和原文片段
 - 生成单文档或知识库综合总结
 - 保存、查看和删除对话历史
+- 可选择论文分析、文献综述、合同审查、会议纪要、学习辅导等内置 Skill
 - 删除文档并清理对应索引
 - 重建知识库向量索引
 
@@ -193,6 +194,7 @@ http://127.0.0.1:8000/app
 | `GET` | `/api/conversations/{id}` | 查看对话及引用 |
 | `DELETE` | `/api/conversations/{id}` | 删除对话 |
 | `POST` | `/api/knowledge-bases/{id}/reindex` | 重建向量索引 |
+| `GET` | `/api/skills` | 获取可用 Skill 列表 |
 
 ## 项目结构
 
