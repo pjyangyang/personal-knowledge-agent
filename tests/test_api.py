@@ -1,4 +1,5 @@
 from io import BytesIO
+import json
 
 import fitz
 from docx import Document as WordDocument
@@ -102,5 +103,15 @@ def test_health_and_pdf_query(tmp_path, monkeypatch):
             summary = client.post(f"/api/knowledge-bases/{kb_id}/summarize", json={})
             assert summary.status_code == 200
             assert summary.json()["evidence_found"] is True
+            with client.stream(
+                "POST",
+                f"/api/knowledge-bases/{kb_id}/query/stream",
+                json={"question": "raw data", "top_k": 3},
+            ) as streamed:
+                assert streamed.status_code == 200
+                events = [json.loads(line) for line in streamed.iter_lines() if line]
+            assert events[0]["type"] == "meta"
+            assert any(event["type"] == "token" for event in events)
+            assert events[-1]["type"] == "done"
     finally:
         app.dependency_overrides.clear()

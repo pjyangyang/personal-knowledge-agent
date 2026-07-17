@@ -94,16 +94,43 @@ function App() {
     const text = question.trim()
     if (!text || !selectedId || loading) return
     setQuestion(''); setLoading(true)
-    setMessages(current => [...current, { role: 'user', content: text }])
+    const streamId = `${Date.now()}-${Math.random()}`
+    setMessages(current => [...current, { role: 'user', content: text }, { role: 'assistant', content: '', citations: [], streamId }])
+    const updateAssistant = (changes) => setMessages(current => current.map(message => message.streamId === streamId ? { ...message, ...changes } : message))
     try {
-      const result = await api(`/api/knowledge-bases/${selectedId}/query`, {
+      const response = await fetch(`/api/knowledge-bases/${selectedId}/query/stream`, {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ question: text, top_k: 5, conversation_id: conversationId })
       })
-      setConversationId(result.conversation_id)
-      setMessages(current => [...current, { role: 'assistant', content: result.answer, citations: result.citations }])
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}))
+        throw new Error(error.detail || `请求失败（${response.status}）`)
+      }
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let answer = ''
+      while (true) {
+        const { value, done } = await reader.read()
+        buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
+        const lines = buffer.split('\n'); buffer = lines.pop() || ''
+        for (const line of lines) {
+          if (!line.trim()) continue
+          const eventData = JSON.parse(line)
+          if (eventData.type === 'meta') {
+            setConversationId(eventData.conversation_id)
+            updateAssistant({ citations: eventData.citations })
+          } else if (eventData.type === 'token') {
+            answer += eventData.content
+            updateAssistant({ content: answer })
+          } else if (eventData.type === 'error') {
+            throw new Error(eventData.message)
+          }
+        }
+        if (done) break
+      }
     } catch (error) {
-      setMessages(current => [...current, { role: 'assistant', content: `请求失败：${error.message}` }])
+      updateAssistant({ content: `请求失败：${error.message}` })
     } finally { setLoading(false) }
   }
 
