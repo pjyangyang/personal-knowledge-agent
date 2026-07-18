@@ -17,6 +17,8 @@
 - 使用 Ollama 或其他 OpenAI 兼容接口生成回答
 - 流式显示大模型回答
 - 返回文件名、PDF 页码、网页 URL 和原文片段
+- 使用 EvidenceGuard 逐条审计答案结论与引用原文的一致性
+- 显示证据覆盖率，并标记已支持、证据较弱和无支持的结论
 - 生成单文档或知识库综合总结
 - 保存、查看和删除对话历史
 - 可选择论文分析、文献综述、合同审查、会议纪要、学习辅导等内置 Skill
@@ -53,6 +55,18 @@ Skill   = 任务提示词、检索数量、分析重点和输出结构
 
 每个 Skill 都保留“只能依据检索证据回答”和“重要结论必须引用来源”的基础约束。
 
+## 核心创新：EvidenceGuard 证据一致性审计
+
+普通 RAG 往往只能证明“检索到了资料”，不能证明“引用内容真的支持生成结论”。本项目在答案生成后增加一个本地证据审计层：
+
+1. 将回答拆分为可核验的结论；
+2. 检查每个结论是否包含有效的 `[1]`、`[2]` 等引用编号；
+3. 对比结论与对应原文片段的文本支持度；
+4. 标记为“已支持”“证据较弱”或“无支持”；
+5. 汇总为可展开查看的证据覆盖率。
+
+EvidenceGuard 不需要再次调用云端大模型，使用本地、确定性规则完成审计，因此能够配合 Ollama 离线运行，结果也可重复验证。它检查的是引用完整性和直接文本支持度，不能替代专业人员对复杂语义、法律或医学结论的最终判断。
+
 ## 工作流程
 
 ```text
@@ -73,6 +87,10 @@ Qdrant 本地向量索引
 Skill 提示词 + Ollama / OpenAI 兼容模型
         ↓
 流式答案与来源引用
+        ↓
+EvidenceGuard 逐条核验结论与引用
+        ↓
+证据覆盖率与风险标记
 ```
 
 ## 技术栈
@@ -90,6 +108,7 @@ Skill 提示词 + Ollama / OpenAI 兼容模型
 | 向量数据库 | Qdrant Local Mode |
 | 大语言模型 | Ollama 或 OpenAI 兼容 API |
 | Skills | YAML 配置、自动注册和任务提示词路由 |
+| 证据审计 | EvidenceGuard、本地引用完整性与文本支持度核验 |
 
 ## 环境要求
 
@@ -250,6 +269,8 @@ http://127.0.0.1:8000/app
 | `POST` | `/api/knowledge-bases/{id}/reindex` | 重建向量索引 |
 | `GET` | `/api/skills` | 获取可用 Skill 列表 |
 
+问答响应中的 `evidence_audit` 提供整体证据覆盖率、结论级状态和无效引用编号；流式接口会在 token 输出后发送 `type: "audit"` 事件。
+
 ## 项目结构
 
 ```text
@@ -269,6 +290,7 @@ personal-knowledge-agent/
 │   │   └── services/
 │   │       ├── document_parser.py # 多格式文档解析
 │   │       ├── generation.py      # 大模型生成与流式输出
+│   │       ├── evidence_guard.py  # 结论与引用的一致性审计
 │   │       ├── pdf_parser.py      # PDF 解析与 OCR
 │   │       ├── retrieval.py       # 检索逻辑
 │   │       ├── vector_store.py    # Embedding 与 Qdrant

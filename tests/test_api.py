@@ -95,6 +95,10 @@ def test_health_and_pdf_query(tmp_path, monkeypatch):
             assert query.json()["citations"][0]["page_number"] == 1
             assert query.json()["conversation_id"] > 0
             assert query.json()["skill_id"] == "paper_analysis"
+            assert query.json()["evidence_audit"]["total_claims"] >= 1
+            assert query.json()["evidence_audit"]["verdict"] in {
+                "grounded", "partially_grounded", "ungrounded", "no_evidence"
+            }
             conversation_id = query.json()["conversation_id"]
             history = client.get(f"/api/conversations/{conversation_id}")
             assert history.status_code == 200
@@ -116,6 +120,7 @@ def test_health_and_pdf_query(tmp_path, monkeypatch):
                 events = [json.loads(line) for line in streamed.iter_lines() if line]
             assert events[0]["type"] == "meta"
             assert any(event["type"] == "token" for event in events)
+            assert any(event["type"] == "audit" for event in events)
             assert events[-1]["type"] == "done"
     finally:
         app.dependency_overrides.clear()

@@ -13,6 +13,7 @@ from .models import Citation, Conversation, Document, DocumentChunk, KnowledgeBa
 from .schemas import (CitationRead, DocumentRead, KnowledgeBaseCreate, KnowledgeBaseRead,
                       KnowledgeBaseUpdate, ConversationDetail, ConversationRead, MessageRead,
                       QueryRequest, QueryResponse, SkillRead, SummaryRequest, WebpageImportRequest)
+from .services.evidence_guard import audit_answer
 from .services.generation import generate_answer, stream_answer
 from .services.document_parser import SUPPORTED_EXTENSIONS, extract_document
 from .services.pdf_parser import PageText, chunk_pages
@@ -179,6 +180,7 @@ def query_knowledge_base(knowledge_base_id: int, payload: QueryRequest, db: Sess
                                   score=round(score, 4), source_url=chunk.document.source_url) for score, chunk in matches]
         answer = generate_answer(payload.question, citations, skill)
         evidence_found = True
+    evidence_audit = audit_answer(answer, citations)
     assistant_message = Message(conversation_id=conversation.id, role="assistant", content=answer)
     db.add(assistant_message)
     db.flush()
@@ -188,7 +190,8 @@ def query_knowledge_base(knowledge_base_id: int, payload: QueryRequest, db: Sess
                         quote=citation.quote, score=citation.score))
     db.commit()
     return QueryResponse(answer=answer, citations=citations, evidence_found=evidence_found,
-                         conversation_id=conversation.id, message_id=assistant_message.id, skill_id=skill.id)
+                         conversation_id=conversation.id, message_id=assistant_message.id, skill_id=skill.id,
+                         evidence_audit=evidence_audit)
 
 
 @router.post("/knowledge-bases/{knowledge_base_id}/query/stream")
@@ -217,6 +220,7 @@ def stream_query_knowledge_base(knowledge_base_id: int, payload: QueryRequest, d
                 answer_parts.append(token)
                 yield json.dumps({"type": "token", "content": token}, ensure_ascii=False) + "\n"
             answer = "".join(answer_parts)
+            evidence_audit = audit_answer(answer, citations)
             with stream_session_factory() as stream_db:
                 assistant = Message(conversation_id=conversation_id, role="assistant", content=answer)
                 stream_db.add(assistant)
@@ -227,6 +231,8 @@ def stream_query_knowledge_base(knowledge_base_id: int, payload: QueryRequest, d
                                            quote=citation.quote, score=citation.score))
                 stream_db.commit()
                 message_id = assistant.id
+            yield json.dumps({"type": "audit", "evidence_audit": evidence_audit.model_dump(mode="json")},
+                             ensure_ascii=False) + "\n"
             yield json.dumps({"type": "done", "message_id": message_id}, ensure_ascii=False) + "\n"
         except Exception as exc:
             yield json.dumps({"type": "error", "message": str(exc)}, ensure_ascii=False) + "\n"
@@ -254,7 +260,9 @@ def get_conversation(conversation_id: int, db: Session = Depends(get_db)):
                                   source_url=c.chunk.document.source_url if c.chunk else None)
                      for c in message.citations]
         messages.append(MessageRead(id=message.id, role=message.role, content=message.content,
-                                    created_at=message.created_at, citations=citations))
+                                    created_at=message.created_at, citations=citations,
+                                    evidence_audit=audit_answer(message.content, citations)
+                                    if message.role == "assistant" else None))
     return ConversationDetail(id=conversation.id, knowledge_base_id=conversation.knowledge_base_id,
                               title=conversation.title, created_at=conversation.created_at, messages=messages)
 
@@ -300,6 +308,7 @@ def summarize_knowledge_base(knowledge_base_id: int, payload: SummaryRequest, db
     db.flush()
     skill = get_skill("general_qa")
     answer = generate_answer(payload.instruction, citations, skill)
+    evidence_audit = audit_answer(answer, citations)
     user_message = Message(conversation_id=conversation.id, role="user", content=payload.instruction)
     assistant_message = Message(conversation_id=conversation.id, role="assistant", content=answer)
     db.add_all([user_message, assistant_message])
@@ -310,7 +319,8 @@ def summarize_knowledge_base(knowledge_base_id: int, payload: SummaryRequest, db
                         quote=citation.quote, score=citation.score))
     db.commit()
     return QueryResponse(answer=answer, citations=citations, evidence_found=bool(citations),
-                         conversation_id=conversation.id, message_id=assistant_message.id, skill_id=skill.id)
+                         conversation_id=conversation.id, message_id=assistant_message.id, skill_id=skill.id,
+                         evidence_audit=evidence_audit)
 
 
 def get_or_create_conversation(db: Session, knowledge_base_id: int, payload: QueryRequest) -> Conversation:

@@ -21,3 +21,18 @@ button { cursor: pointer; }
 .skill-control { display: flex; align-items: center; gap: 7px; }.skill-control label { color: #8492a0; font-size: 10px; }.skill-control select { max-width: 145px; border: 1px solid #dfe8e5; border-radius: 7px; background: #f7fbf9; color: #367965; padding: 6px 8px; font-size: 10px; outline: 0; }
 .doc-delete { border: 0; background: transparent; color: #bc756d; font-size: 10px; padding: 4px; opacity: .75; }
 .doc-delete:hover { color: #a43d32; opacity: 1; }
+.evidence-audit { margin-top: 13px; border: 1px solid #cfe6dc; border-radius: 9px; background: #f5fbf8; white-space: normal; }
+.evidence-audit summary { list-style: none; display: flex; align-items: center; gap: 8px; padding: 9px 10px; cursor: pointer; }
+.evidence-audit summary::-webkit-details-marker { display: none; }
+.evidence-audit summary > span:nth-child(2) { flex: 1; }
+.evidence-audit summary strong { display: block; color: #316e5c; font-size: 10px; }
+.evidence-audit summary small { display: block; color: #7b9189; font-size: 9px; margin-top: 1px; }
+.evidence-audit summary b { color: #25795f; font-size: 13px; }
+.audit-shield { width: 23px; height: 23px; border-radius: 7px; display: grid; place-items: center; background: #dff3e9; color: #20775b; font-weight: 700; }
+.evidence-audit.partially_grounded { border-color: #eadfb7; background: #fffdf5; }.evidence-audit.partially_grounded summary b, .evidence-audit.partially_grounded summary strong { color: #8b6c16; }
+.evidence-audit.ungrounded { border-color: #efd2cd; background: #fff8f7; }.evidence-audit.ungrounded summary b, .evidence-audit.ungrounded summary strong { color: #a74d43; }
+.audit-body { border-top: 1px solid #dfebe6; padding: 9px 10px; }
+.audit-stats { display: flex; flex-wrap: wrap; gap: 8px; color: #7b8984; font-size: 9px; margin-bottom: 8px; }.audit-stats .supported { color: #27775f; }.audit-stats .weak { color: #98781c; }.audit-stats .unsupported { color: #a84e43; }
+.audit-claim { display: flex; gap: 7px; padding: 7px 0; border-top: 1px dashed #dfe8e4; }.audit-claim:first-of-type { border-top: 0; }
+.audit-claim p { margin: 0; color: #45554f; font-size: 10px; line-height: 1.5; }.audit-claim small { display: block; color: #89958f; font-size: 9px; margin-top: 3px; }
+.claim-status { flex: 0 0 auto; align-self: flex-start; border-radius: 10px; padding: 2px 6px; font-size: 8px; font-weight: 700; }.claim-status.supported { background: #dcf2e8; color: #28755e; }.claim-status.weak { background: #f7edc9; color: #896a15; }.claim-status.unsupported { background: #f8ded9; color: #a34a40; }
