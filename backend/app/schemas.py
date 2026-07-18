@@ -1,5 +1,7 @@
 from datetime import datetime
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -49,6 +51,25 @@ class QueryRequest(BaseModel):
     skill_id: str = "general_qa"
 
 
+class EvidenceClaimAudit(BaseModel):
+    claim: str
+    citation_indices: list[int]
+    status: Literal["supported", "weak", "unsupported"]
+    support_score: float
+    reason: str
+
+
+class EvidenceAudit(BaseModel):
+    score: int
+    verdict: Literal["grounded", "partially_grounded", "ungrounded", "no_evidence"]
+    total_claims: int
+    supported_claims: int
+    weak_claims: int
+    unsupported_claims: int
+    invalid_citation_indices: list[int]
+    claims: list[EvidenceClaimAudit]
+
+
 class QueryResponse(BaseModel):
     answer: str
     citations: list[CitationRead]
@@ -56,6 +77,7 @@ class QueryResponse(BaseModel):
     conversation_id: int
     message_id: int
     skill_id: str = "general_qa"
+    evidence_audit: EvidenceAudit
 
 
 class SkillRead(BaseModel):
@@ -89,6 +111,7 @@ class MessageRead(BaseModel):
     content: str
     created_at: datetime
     citations: list[CitationRead] = []
+    evidence_audit: EvidenceAudit | None = None
 
 
 class ConversationDetail(ConversationRead):

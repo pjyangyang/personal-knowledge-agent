@@ -9,6 +9,39 @@ const api = async (path, options = {}) => {
   return data
 }
 
+const auditLabels = {
+  grounded: '证据充分',
+  partially_grounded: '部分结论待复核',
+  ungrounded: '证据不足',
+  no_evidence: '未生成事实结论'
+}
+
+const claimLabels = { supported: '已支持', weak: '较弱', unsupported: '无支持' }
+
+function EvidenceAuditPanel({ audit }) {
+  if (!audit) return null
+  const noEvidence = audit.verdict === 'no_evidence'
+  return <details className={`evidence-audit ${audit.verdict}`}>
+    <summary>
+      <span className="audit-shield">✓</span>
+      <span><strong>EvidenceGuard 证据审计</strong><small>{auditLabels[audit.verdict]}</small></span>
+      <b>{noEvidence ? '—' : `${audit.score}%`}</b>
+    </summary>
+    {!noEvidence && <div className="audit-body">
+      <div className="audit-stats">
+        <span>结论 {audit.total_claims}</span>
+        <span className="supported">支持 {audit.supported_claims}</span>
+        <span className="weak">较弱 {audit.weak_claims}</span>
+        <span className="unsupported">无支持 {audit.unsupported_claims}</span>
+      </div>
+      {audit.claims.map((item, index) => <div className="audit-claim" key={index}>
+        <span className={`claim-status ${item.status}`}>{claimLabels[item.status]}</span>
+        <div><p>{item.claim}</p><small>{item.reason}{item.citation_indices.length ? ` 引用：${item.citation_indices.map(value => `[${value}]`).join(' ')}` : ''}</small></div>
+      </div>)}
+    </div>}
+  </details>
+}
+
 function App() {
   const [knowledgeBases, setKnowledgeBases] = useState([])
   const [skills, setSkills] = useState([])
@@ -89,7 +122,7 @@ function App() {
         method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})
       })
       setConversationId(result.conversation_id)
-      setMessages(current => [...current, { role: 'assistant', content: result.answer, citations: result.citations }])
+      setMessages(current => [...current, { role: 'assistant', content: result.answer, citations: result.citations, evidenceAudit: result.evidence_audit }])
       setNotice('总结已生成')
     } catch (error) { setNotice(error.message) } finally { setLoading(false) }
   }
@@ -151,6 +184,8 @@ function App() {
           } else if (eventData.type === 'token') {
             answer += eventData.content
             updateAssistant({ content: answer })
+          } else if (eventData.type === 'audit') {
+            updateAssistant({ evidenceAudit: eventData.evidence_audit })
           } else if (eventData.type === 'error') {
             throw new Error(eventData.message)
           }
@@ -182,7 +217,7 @@ function App() {
           <div className="card-head"><div><h2>知识库问答</h2><span>回答将优先依据已上传文档，并保留页码引用</span></div><div className="skill-control"><label>任务 Skill</label><select value={selectedSkill} onChange={event => setSelectedSkill(event.target.value)} disabled={loading}>{skills.map(skill => <option value={skill.id} key={skill.id}>{skill.name}</option>)}</select><span className="pill">{documents.length} 个文档</span></div></div>
           <div className="messages">
             {!messages.length && <div className="welcome"><div className="welcome-icon">✦</div><h3>从资料中找到答案</h3><p>你可以询问方法、结论、定义、合同条款，或比较多个文档的观点。</p><div className="suggestions"><button onClick={() => setQuestion('请总结这些文档的核心观点')}>总结核心观点</button><button onClick={() => setQuestion('这些资料中使用了哪些方法？')}>提取研究方法</button><button onClick={() => setQuestion('请列出相关结论及其页码')}>查找关键结论</button></div></div>}
-            {messages.map((message, index) => <div key={index} className={`message ${message.role}`}><div className="avatar">{message.role === 'user' ? '我' : '✦'}</div><div className="bubble"><div className="message-content">{message.content}</div>{message.citations?.length > 0 && <div className="citations"><div className="citation-title">证据来源</div>{message.citations.map((citation, i) => <div className="citation" key={citation.chunk_id || i}><span className="citation-index">[{i + 1}]</span><div><strong>{citation.filename}</strong><span>第 {citation.page_number} 页 · 相似度 {citation.score}</span><p>{citation.quote}</p></div></div>)}</div>}</div></div>)}
+            {messages.map((message, index) => <div key={index} className={`message ${message.role}`}><div className="avatar">{message.role === 'user' ? '我' : '✦'}</div><div className="bubble"><div className="message-content">{message.content}</div><EvidenceAuditPanel audit={message.evidenceAudit || message.evidence_audit} />{message.citations?.length > 0 && <div className="citations"><div className="citation-title">证据来源</div>{message.citations.map((citation, i) => <div className="citation" key={citation.chunk_id || i}><span className="citation-index">[{i + 1}]</span><div><strong>{citation.filename}</strong><span>第 {citation.page_number} 页 · 相似度 {citation.score}</span><p>{citation.quote}</p></div></div>)}</div>}</div></div>)}
             {loading && <div className="typing"><span /><span /><span />正在处理…</div>}
           </div>
           <form className="composer" onSubmit={ask}><input value={question} onChange={event => setQuestion(event.target.value)} placeholder={selectedId ? '询问你的文档…' : '请先创建知识库'} disabled={!selectedId || loading} /><button className="send" disabled={!selectedId || loading || !question.trim()}>发送</button></form>
